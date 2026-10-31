@@ -602,6 +602,9 @@ Model advertises streaming, GPU device             // dictate.streaming
   ├── ar: QwenCleo-ASR 1.7B (Qwen3-ASR 1.7B fine-tune for Egyptian Arabic and
   │   Arabic/English code-switching; Arabic only, 2.2 GB; its 19.85% WER is
   │   the author's own test) follows without a badge
+  ├── he: ivrit.ai Whisper large-v3-turbo (ivrit.ai's Hebrew fine-tune; Hebrew
+  │   only, no Auto, 886 MB) Recommended, Whisper turbo for recognition hints;
+  │   FLEURS Hebrew 18.46% WER against stock turbo's 29.51%
   └── Every other available model follows without a badge, selectable and
       deletable; never auto-switched or auto-downloaded (setup.language-select)
 ```

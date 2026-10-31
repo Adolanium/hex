@@ -22,6 +22,7 @@ pub enum TranscriptionModelId {
     ParakeetV2,
     ParakeetV3,
     WhisperLargeV3Turbo,
+    IvritWhisperLargeV3Turbo,
     Qwen3Asr06B,
     #[serde(rename = "qwencleo_asr_1_7b")]
     QwenCleoAsr17B,
@@ -41,6 +42,7 @@ impl TranscriptionModelId {
             Self::ParakeetV2 => "parakeet_v2",
             Self::ParakeetV3 => "parakeet_v3",
             Self::WhisperLargeV3Turbo => "whisper_large_v3_turbo",
+            Self::IvritWhisperLargeV3Turbo => "ivrit_whisper_large_v3_turbo",
             Self::Qwen3Asr06B => "qwen3_asr06_b",
             Self::QwenCleoAsr17B => "qwencleo_asr_1_7b",
             Self::SenseVoiceSmall => "sense_voice_small",
@@ -61,6 +63,7 @@ impl FromStr for TranscriptionModelId {
             "parakeet_v2" => Ok(Self::ParakeetV2),
             "parakeet_v3" => Ok(Self::ParakeetV3),
             "whisper_large_v3_turbo" => Ok(Self::WhisperLargeV3Turbo),
+            "ivrit_whisper_large_v3_turbo" => Ok(Self::IvritWhisperLargeV3Turbo),
             "qwen3_asr06_b" => Ok(Self::Qwen3Asr06B),
             "qwencleo_asr_1_7b" => Ok(Self::QwenCleoAsr17B),
             "sense_voice_small" => Ok(Self::SenseVoiceSmall),
@@ -339,6 +342,20 @@ const WHISPER_ARTIFACT: GgufArtifact = GgufArtifact {
     architecture: "whisper",
     variant: "whisper-large-v3-turbo",
 };
+// ivrit.ai's Hebrew fine-tune of Whisper large-v3-turbo (Apache-2.0), from
+// ivrit-ai/whisper-large-v3-turbo at f33172a8. Converted with transcribe.cpp
+// 7045d1c's Whisper converter, with the fine-tune's attribution in
+// `general.*`, and quantized to Q8_0; quantizing again reproduces this file
+// byte for byte. The repository's card holds the recipe.
+const IVRIT_WHISPER_ARTIFACT: GgufArtifact = GgufArtifact {
+    filename: "ivrit-whisper-large-v3-turbo-Q8_0.gguf",
+    revision: "a12befaff80add995ac6a8fe10cbb7f38438c7b5",
+    repository: "adolan/ivrit-whisper-large-v3-turbo-gguf",
+    bytes: 886_381_536,
+    sha256: "23756afa3d3c52cd3cb55e259c8373373eba6d19c3858a67531ba2772b7f272f",
+    architecture: "whisper",
+    variant: "ivrit-whisper-large-v3-turbo",
+};
 const QWEN_ARTIFACT: GgufArtifact = GgufArtifact {
     filename: "Qwen3-ASR-0.6B-Q8_0.gguf",
     revision: "e4e16599b900eb0cb36e524514756bb92eb092b7",
@@ -479,6 +496,27 @@ pub const MODELS: &[ModelDefinition] = &[
         supports_recognition_hints: true,
     },
     ModelDefinition {
+        id: TranscriptionModelId::IvritWhisperLargeV3Turbo,
+        name: "ivrit.ai Whisper large-v3-turbo",
+        // Stock turbo's architecture and size; it matched its latency on
+        // FLEURS Hebrew (263 ms against 277 ms per utterance).
+        realtime: "~19x",
+        // FLEURS Hebrew test, all 792 utterances, Q8_0 through transcribe.cpp
+        // 7045d1c's WER harness; stock turbo scores 29.51% the same way.
+        word_error_rate: Some(18.46),
+        quality_context: "Hebrew benchmark",
+        coverage: "Hebrew",
+        timestamps: "Segment timestamps",
+        streams: false,
+        runtime: ModelRuntime::Gguf(&IVRIT_WHISPER_ARTIFACT),
+        // The fine-tune lost Whisper's language detection and translation,
+        // so it always runs with the Hebrew hint.
+        languages: &["he"],
+        accepts_language_hint: true,
+        supports_language_detection: false,
+        supports_recognition_hints: false,
+    },
+    ModelDefinition {
         id: TranscriptionModelId::Qwen3Asr06B,
         name: "Qwen3-ASR 0.6B",
         realtime: "~16x",
@@ -603,6 +641,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("pt", "Portuguese"),
     ("it", "Italian"),
     ("ar", "Arabic"),
+    ("he", "Hebrew"),
     ("hi", "Hindi"),
     ("bn", "Bangla"),
     ("vi", "Vietnamese"),
@@ -651,8 +690,8 @@ pub fn language_name(code: &str) -> &str {
 pub(crate) fn choices_for_runtime(language: &str) -> Vec<ModelChoice> {
     use Recommendation::{Fastest, MostAccurate, RecognitionHints, Recommended};
     use TranscriptionModelId::{
-        CohereTranscribe, ParakeetUnifiedEnglish, ParakeetV3, Qwen3Asr06B, SenseVoiceSmall,
-        WhisperLargeV3Turbo,
+        CohereTranscribe, IvritWhisperLargeV3Turbo, ParakeetUnifiedEnglish, ParakeetV3,
+        Qwen3Asr06B, SenseVoiceSmall, WhisperLargeV3Turbo,
     };
     let choices: &[(TranscriptionModelId, Recommendation)] = match language {
         AUTO_LANGUAGE => &[(WhisperLargeV3Turbo, Recommended), (Qwen3Asr06B, Fastest)],
@@ -683,6 +722,10 @@ pub(crate) fn choices_for_runtime(language: &str) -> Vec<ModelChoice> {
         "ar" => &[
             (WhisperLargeV3Turbo, Recommended),
             (CohereTranscribe, MostAccurate),
+        ],
+        "he" => &[
+            (IvritWhisperLargeV3Turbo, Recommended),
+            (WhisperLargeV3Turbo, RecognitionHints),
         ],
         "tr" | "ms" | "fil" | "fa" | "mk" => &[(WhisperLargeV3Turbo, Recommended)],
         "vi" => &[
@@ -1454,6 +1497,10 @@ mod tests {
                 TranscriptionModelId::WhisperLargeV3Turbo,
                 "whisper_large_v3_turbo",
             ),
+            (
+                TranscriptionModelId::IvritWhisperLargeV3Turbo,
+                "ivrit_whisper_large_v3_turbo",
+            ),
             (TranscriptionModelId::Qwen3Asr06B, "qwen3_asr06_b"),
             (TranscriptionModelId::QwenCleoAsr17B, "qwencleo_asr_1_7b"),
             (TranscriptionModelId::SenseVoiceSmall, "sense_voice_small"),
@@ -1558,7 +1605,8 @@ mod tests {
     fn weak_qwen_and_parakeet_languages_route_to_stronger_shipped_models() {
         use Recommendation::{Fastest, MostAccurate, RecognitionHints, Recommended};
         use TranscriptionModelId::{
-            CohereTranscribe, ParakeetV3, Qwen3Asr06B, SenseVoiceSmall, WhisperLargeV3Turbo,
+            CohereTranscribe, IvritWhisperLargeV3Turbo, ParakeetV3, Qwen3Asr06B, SenseVoiceSmall,
+            WhisperLargeV3Turbo,
         };
         assert_eq!(
             routing("el"),
@@ -1612,6 +1660,13 @@ mod tests {
             ]
         );
         assert_eq!(routing("mt"), [(ParakeetV3, Recommended)]);
+        assert_eq!(
+            routing("he"),
+            [
+                (IvritWhisperLargeV3Turbo, Recommended),
+                (WhisperLargeV3Turbo, RecognitionHints)
+            ]
+        );
         for language in ["hi", "th", "id", "zh"] {
             assert_eq!(routing(language)[0], (Qwen3Asr06B, Recommended));
         }
