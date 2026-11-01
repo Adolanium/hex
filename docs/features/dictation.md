@@ -610,6 +610,8 @@ Model advertises streaming, GPU device             // dictate.streaming
   │   │   reveals the last dictation's words for a frame (Linux, Windows: unverified)
   │   ├── Grows with the words to 552 pt; the newest stay in view, "…" cutting the start
   │   └── Tentative words, when the model has any, are dimmed after the stable ones
+  │       in reading order: one text, so right-to-left speech (Hebrew, Arabic,
+  │       Persian) puts them on the left
   ├── Release, Escape, short tap, or a lost microphone -> The recording ends -> Hidden
   ├── Provisional: never pasted, copied, or kept (the final text replaces it)
   ├── A failed or interrupted stream clears the text while the capture goes on

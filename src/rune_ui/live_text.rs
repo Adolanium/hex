@@ -11,7 +11,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use rune::{Anim, Cx, El, OverlayOptions, OverlayPlacement, OverlaySpec, ScreenEdge, row, text};
+use rune::{
+    Anim, Cx, El, OverlayOptions, OverlayPlacement, OverlaySpec, ScreenEdge, Span, row, text,
+};
 
 use super::controls::Paint;
 use crate::transcription::engine::Partial;
@@ -139,25 +141,27 @@ fn view(plate: &Plate, cx: &mut Cx<Plate>) -> El {
     if plate.stable.trim().is_empty() && plate.tentative.trim().is_empty() {
         return root;
     }
-    // The newest words stay in view: the start gives way with "…".
-    let line = row()
-        .key("line")
+    // One text, the tentative words a faint span after the stable ones, so
+    // the bidirectional algorithm puts them after it in reading order in
+    // every script. The newest words stay in view: the start gives way
+    // with "…".
+    let stable = plate.stable.trim();
+    let words = format!("{stable}{}", plate.tentative).trim().to_owned();
+    let tentative = (words.len() > stable.len())
+        .then(|| Span {
+            color: Some(p.faint()),
+            ..Span::new(stable.len(), words.len())
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    let line = text(words)
+        .key("words")
         .min_w(0.0)
         .shrink()
-        .child(
-            text(plate.stable.trim().to_owned())
-                .key("stable")
-                .truncate_head()
-                .font(p.k.ty.ui)
-                .color(p.text()),
-        )
-        .children((!plate.tentative.trim().is_empty()).then(|| {
-            text(plate.tentative.clone())
-                .key("tentative")
-                .truncate()
-                .font(p.k.ty.ui)
-                .color(p.faint())
-        }));
+        .truncate_head()
+        .font(p.k.ty.ui)
+        .color(p.text())
+        .spans(tentative);
     root.child(
         row()
             .key("plate")
@@ -217,7 +221,6 @@ mod tests {
         assert!(w < SIZE.0 / 2.0, "the plate hugs a short line: {w}");
         assert!((x + w / 2.0 - SIZE.0 / 2.0).abs() < 1.0, "centred: {x} {w}");
         assert!((y + h / 2.0 - SIZE.1 / 2.0).abs() < 1.0, "centred: {y} {h}");
-        assert!(rect(&rt, "tentative").is_none());
     }
 
     #[test]
@@ -227,14 +230,58 @@ mod tests {
             let [x, _, w, h] = rect(&rt, "plate").unwrap();
             assert!(x >= 0.0 && x + w <= SIZE.0, "inside: {x} {w}");
             assert_eq!(h, PLATE_H);
-            let [line_x, _, line_w, _] = rect(&rt, "line").unwrap();
+            let [line_x, _, line_w, line] = rect(&rt, "words").unwrap();
             assert!(
                 line_x + line_w <= x + w,
                 "the words fit the plate: {line_x} {line_w}"
             );
-            let [_, _, _, line] = rect(&rt, "stable").unwrap();
             assert!(line < PLATE_H, "one line: {line}");
-            assert_eq!(rect(&rt, "tentative").is_some(), !tentative.is_empty());
+            // The start gives way, so the newest, tentative words stay in view.
+            let stable_fill = glyphs(&runtime(LONG, "", true))[0].0;
+            let tentative_shows = glyphs(&rt).iter().any(|g| g.0 != stable_fill);
+            assert_eq!(tentative_shows, !tentative.is_empty());
+        }
+    }
+
+    /// Each glyph's fill and horizontal ink extent.
+    fn glyphs(rt: &Runtime<Plate>) -> Vec<([f32; 4], f32, f32)> {
+        rt.instances
+            .iter()
+            .filter(|i| i.params[1] == rune::render::KIND_GLYPH)
+            .map(|i| (i.fill, i.rect[0], i.rect[0] + i.rect[2]))
+            .collect()
+    }
+
+    #[test]
+    fn the_tentative_words_follow_the_stable_ones_in_reading_order() {
+        // English reads left to right; Hebrew, alone or mixed with English
+        // terms, right to left, so its newest words belong on the left.
+        for (stable, tentative, right_to_left) in [
+            (SHORT, " is to finish", false),
+            ("התוכנית להיום", " היא לסיים", true),
+            ("צריך לעשות deploy ל-React", " עד מחר", true),
+        ] {
+            let Some(&(stable_fill, ..)) = glyphs(&runtime(stable, "", false)).first() else {
+                eprintln!("skipping {stable:?}: no glyphs");
+                continue;
+            };
+            let (words, newest): (Vec<_>, Vec<_>) = glyphs(&runtime(stable, tentative, false))
+                .into_iter()
+                .partition(|&(fill, ..)| fill == stable_fill);
+            assert!(!newest.is_empty(), "{tentative:?} draws in its own colour");
+            let left = |g: &[([f32; 4], f32, f32)]| g.iter().map(|g| g.1).fold(f32::MAX, f32::min);
+            let right = |g: &[([f32; 4], f32, f32)]| g.iter().map(|g| g.2).fold(f32::MIN, f32::max);
+            let gap = if right_to_left {
+                left(&words) - right(&newest)
+            } else {
+                left(&newest) - right(&words)
+            };
+            // A space at 2x is several pixels; touching or overlapping ink
+            // means the tentative words sit on the wrong side or lost it.
+            assert!(
+                gap > 4.0,
+                "{stable:?} then {tentative:?}: the newest words follow a space in reading order (gap {gap})"
+            );
         }
     }
 
@@ -295,6 +342,7 @@ mod tests {
             ("short", SHORT, ""),
             ("long", LONG, ""),
             ("tentative", SHORT, " is to finish"),
+            ("rtl-tentative", "צריך לעשות deploy ל-React", " עד מחר"),
         ] {
             for dark in [false, true] {
                 let mut rt = runtime(stable, tentative, dark);
