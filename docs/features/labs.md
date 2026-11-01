@@ -449,10 +449,11 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   [dictation/live_text.rs](../../src/dictation/live_text.rs) (a recording's end clears only its
   own text); `a_spot_places_the_plate_just_past_the_hud`,
   `a_short_line_hugs_its_words_in_the_middle`,
-  `a_long_line_stays_inside_the_overlay_on_one_line`, and
-  `no_words_draw_nothing` in
+  `a_long_line_stays_inside_the_overlay_on_one_line`,
+  `the_tentative_words_follow_the_stable_ones_in_reading_order` (English
+  and Hebrew), and `no_words_draw_nothing` in
   [rune_ui/live_text.rs](../../src/rune_ui/live_text.rs), whose opt-in
-  `snapshots` renders the line in light and dark; and
+  `snapshots` renders the line, a Hebrew one included, in light and dark; and
   `live_text_hangs_just_past_the_plate_wherever_it_sits` in
   [rune_hud/hud_placement.rs](../../src/rune_hud/hud_placement.rs). The line has no golden
   and no `--snap` scene (overlays have none), and nothing headless checks
